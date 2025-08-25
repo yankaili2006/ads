@@ -20,22 +20,27 @@ public class PhoneEncryptionApp {
     private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     
     public static void main(String[] args) {
-        if (args.length < 3) {
-            System.out.println("Usage: java -jar phone-encryption.jar <input_csv> <output_mobile_csv> <output_md5_csv>");
-            System.out.println("Example: java -jar phone-encryption.jar phones.csv encrypted_mobile.csv encrypted_md5.csv");
+        if (args.length < 2) {
+            System.out.println("Usage: java -jar phone-encryption.jar <input_csv> <output_mobile_csv> [output_md5_csv]");
+            System.out.println("Example 1 (only mobile): java -jar phone-encryption.jar phones.csv encrypted_mobile.csv");
+            System.out.println("Example 2 (both columns): java -jar phone-encryption.jar phones.csv encrypted_mobile.csv encrypted_md5.csv");
             return;
         }
         
         String inputFile = args[0];
         String outputMobileFile = args[1];
-        String outputMd5File = args[2];
+        String outputMd5File = args.length > 2 ? args[2] : null;
         
         try {
             long startTime = System.currentTimeMillis();
             System.out.println("Starting phone number encryption...");
             System.out.println("Input file: " + inputFile);
             System.out.println("Output mobile file: " + outputMobileFile);
-            System.out.println("Output md5 file: " + outputMd5File);
+            if (outputMd5File != null) {
+                System.out.println("Output md5 file: " + outputMd5File);
+            } else {
+                System.out.println("MD5 processing: disabled");
+            }
             System.out.println("Thread pool size: " + THREAD_POOL_SIZE);
             
             // 使用单线程版本避免多线程问题
@@ -98,15 +103,18 @@ public class PhoneEncryptionApp {
     
     /**
      * 单线程版本（用于测试或小规模数据）
-     * 处理包含两列的CSV文件：mobile和mobile_md5
-     * 分别对两列进行加密，生成两个输出文件
+     * 支持两种输入格式：
+     * 1. 单列格式：只有手机号（每行一个手机号）
+     * 2. 双列格式：mobile和mobile_md5两列
+     * 可以选择只处理mobile列或同时处理两列
      */
     private static void processCsvFileSingleThread(String inputFile, String outputMobileFile, String outputMd5File) throws IOException {
         long processedCount = 0;
+        boolean processMd5 = outputMd5File != null;
         
         try (BufferedReader reader = Files.newBufferedReader(Paths.get(inputFile), StandardCharsets.UTF_8);
              BufferedWriter writerMobile = Files.newBufferedWriter(Paths.get(outputMobileFile), StandardCharsets.UTF_8);
-             BufferedWriter writerMd5 = Files.newBufferedWriter(Paths.get(outputMd5File), StandardCharsets.UTF_8)) {
+             BufferedWriter writerMd5 = processMd5 ? Files.newBufferedWriter(Paths.get(outputMd5File), StandardCharsets.UTF_8) : null) {
             
             EcdhEncUdfWrapper encryptor = new EcdhEncUdfWrapper();
             
@@ -117,13 +125,21 @@ public class PhoneEncryptionApp {
                 
                 // 处理CSV格式（支持常规和带双引号）
                 String[] columns = parseCsvLine(line);
-                if (columns.length < 2) {
-                    System.err.println("Invalid line format, expected 2 columns: " + line);
+                
+                String mobile;
+                String mobileMd5 = null;
+                
+                if (columns.length == 1) {
+                    // 单列格式：只有手机号
+                    mobile = columns[0].replace("\"", "").trim();
+                } else if (columns.length >= 2) {
+                    // 双列格式：mobile和mobile_md5
+                    mobile = columns[0].replace("\"", "").trim();
+                    mobileMd5 = columns[1].replace("\"", "").trim();
+                } else {
+                    System.err.println("Invalid line format: " + line);
                     continue;
                 }
-                
-                String mobile = columns[0].replace("\"", "").trim();
-                String mobileMd5 = columns[1].replace("\"", "").trim();
                 
                 try {
                     // 加密mobile列
@@ -131,10 +147,12 @@ public class PhoneEncryptionApp {
                     writerMobile.write(encryptedMobile);
                     writerMobile.newLine();
                     
-                    // 加密mobile_md5列
-                    String encryptedMd5 = encryptor.evaluate(mobileMd5, PRIVATE_KEY);
-                    writerMd5.write(encryptedMd5);
-                    writerMd5.newLine();
+                    // 如果存在md5列并且需要处理md5
+                    if (processMd5 && mobileMd5 != null && !mobileMd5.isEmpty()) {
+                        String encryptedMd5 = encryptor.evaluate(mobileMd5, PRIVATE_KEY);
+                        writerMd5.write(encryptedMd5);
+                        writerMd5.newLine();
+                    }
                     
                     processedCount++;
                     if (processedCount % BATCH_SIZE == 0) {

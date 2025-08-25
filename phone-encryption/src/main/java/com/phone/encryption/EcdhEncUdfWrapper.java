@@ -17,7 +17,7 @@ public class EcdhEncUdfWrapper {
     }
     
     /**
-     * 静态方法加密手机号
+     * 静态方法加密手机号 - 使用JAR中的EcdhEncUdf类
      */
     public static String encryptPhoneNumber(String phoneNumber, String publicKeyStr) {
         EcdhEncUdf encryptor = new EcdhEncUdf();
